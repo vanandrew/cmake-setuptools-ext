@@ -1,6 +1,5 @@
 import os
 import sys
-import re
 import subprocess
 import multiprocessing
 import shutil
@@ -24,17 +23,33 @@ def auto_determine_jobs() -> int:
 
 
 class CMakeExtension(Extension):
-    def __init__(self, name: str, cmakelists: str, jobs: int = 1, include: Callable = None, exclude: Callable = None):
+    def __init__(
+        self,
+        name: str,
+        cmakelists: str,
+        toolchain: str = None,
+        library_dir: str = "lib",
+        jobs: int = None,
+        include: Callable = None,
+        exclude: Callable = None,
+    ):
         """Extension class for CMake builds
 
         Parameters
         ----------
         name : str
-            name of extension (full python path (e.g. module.extension))
-        cmakelists : str, optional
+            name of extension (full python path (e.g. module.extension, the corresponding import for this
+            extension will be from module import extension))
+        cmakelists : str
             path to CMakeLists.txt file
+        toolchain : str, optional
+            path to a toolchain file
+        library_dir : str, optional
+            relative path to shared libraries, i.e. the path where cmake installs your shared libaries relative
+            to the release directory, by default this is set to `lib`. This means your cmake file should have
+            a line like `install(TARGETS some_target LIBRARY DESTINATION lib)`
         jobs : int, optional
-            number of jobs to use during make stage, by default 1
+            number of jobs to use during make stage, by default None, which auto-determines the number of jobs
         include : Callable, optional
             a callable that takes in a lib name as input and returns a boolean on whether it should be included
             during install
@@ -51,8 +66,12 @@ class CMakeExtension(Extension):
             raise AssertionError("'cmakelists' must be a path to a 'CMakeLists.txt' file")
         # Set the path to the CMakeLists.txt file
         self.cmakelists = cmakelists
+        # Set the toolchain
+        self.toolchain = toolchain
+        # Set the library dir
+        self.library_dir = library_dir
         # Set the number of build jobs to use
-        self.jobs = jobs
+        self.jobs = jobs if jobs is not None else auto_determine_jobs()
         # Set include/exclude functions
         self.include = include
         self.exclude = exclude
@@ -79,8 +98,16 @@ class CMakeBuild(build_ext):
         shutil.rmtree(build_directory, ignore_errors=True)
         os.makedirs(build_directory, exist_ok=True)
 
+        # TODO: because built_ext allows passing a list of extensions
+        # we should probably loop over the extension list, but cmake can build multiple
+        # extensions, so maybe it should be handled on that end?
+
         # create list of cmake args to pass
         cmake_args = list()
+
+        # if toolchain file specified, use the toolchain
+        if self.extensions[0].toolchain:
+            cmake_args += ["--toolchain " + self.extensions[0].toolchain]
 
         # always set the python executable to the version of the current calling interpreter
         cmake_args += ["-DPYTHON_EXECUTABLE=" + sys.executable]
@@ -120,7 +147,7 @@ class CMakeBuild(build_ext):
         # setup directory names
         build_temp = os.path.abspath(self.build_temp)
         dest_ext = self.get_ext_fullpath(ext.name)
-        source_dir = os.path.join(build_temp, "release", "lib")
+        source_dir = os.path.join(build_temp, "release", ext.library_dir)
         dest_dir = os.path.dirname(dest_ext)
         os.makedirs(dest_dir, exist_ok=True)
 

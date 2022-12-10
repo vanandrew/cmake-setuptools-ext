@@ -151,9 +151,10 @@ class CMakeBuild(build_ext):
         dest_dir = os.path.dirname(dest_ext)
         os.makedirs(dest_dir, exist_ok=True)
 
-        # make __init__.py
-        with open(os.path.join(dest_dir, "__init__.py"), "w"):
-            pass
+        # make __init__.py if it doesn't exist
+        if not os.path.exists(os.path.join(dest_dir, "__init__.py")):
+            with open(os.path.join(dest_dir, "__init__.py"), "w"):
+                pass
 
         # move libs to destination path
         for f in glob.glob(os.path.join(source_dir, "*.so*")):
